@@ -15,4 +15,4 @@ Stack : NestJS, Prisma, PostgreSQL.
 9. **API REST** — CRUD tickets + transition de workflow ; contrôleurs qui appellent le service métier.
 10. **Swagger / OpenAPI** — Documenter l’API.
 11. **Docker Compose** — Lancer app + PostgreSQL.
-12. **Features avancées (2 min)** — Choisir 2 parmi : notifications (webhook/email), commentaires @mention, pièces jointes, filtres + full-text, métriques, API pour CLI.
+12. **Features avancées (2 min)** — métriques, API pour CLI.

@@ -1,0 +1,122 @@
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// AUTH & UTILISATEURS
+// =============================================================================
+
+/// Compte utilisateur : login (email/password), profil, et rôles. Peut être assigné à des tickets.
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userRoles UserRole[]
+  assignedTickets Ticket[]
+}
+
+/// Rôle métier (ex. ADMIN, USER, MANAGER). Utilisé pour l’auth et pour autoriser les transitions de workflow (qui peut passer un ticket d’un état à l’autre).
+model Role {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  userRoles UserRole[]
+  transitions Transition[]
+}
+
+/// Table de liaison User <-> Role : un utilisateur peut avoir plusieurs rôles (many-to-many).
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  @@id([userId, roleId])
+}
+
+// =============================================================================
+// WORKFLOW (générique, non hardcodé)
+// =============================================================================
+
+/// Définition d’un workflow : ensemble d’états et de transitions. Un ticket est lié à un workflow (ex. "Support", "Bug").
+model Workflow {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  states      State[]
+  transitions Transition[]
+  tickets     Ticket[]
+}
+
+/// État possible dans un workflow (ex. Ouvert, En cours, Résolu, Fermé). Ordre pour affichage (kanban, etc.).
+model State {
+  id             String   @id @default(uuid())
+  name           String
+  order          Int      @default(0)
+  workflowId     String
+  workflow       Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  fromTransitions Transition[] @relation("FromState")
+  toTransitions   Transition[] @relation("ToState")
+  tickets        Ticket[]
+}
+
+/// Transition autorisée : passage d’un état à un autre. Seuls les utilisateurs ayant un des requiredRoles peuvent exécuter cette transition.
+model Transition {
+  id          String   @id @default(uuid())
+  workflowId  String
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  fromStateId String
+  fromState   State    @relation("FromState", fields: [fromStateId], references: [id], onDelete: Cascade)
+  toStateId   String
+  toState     State    @relation("ToState", fields: [toStateId], references: [id], onDelete: Cascade)
+  requiredRoles Role[]
+}
+
+// =============================================================================
+// TICKETS (projection courante + event sourcing)
+// =============================================================================
+
+/// Niveau de priorité d’un ticket (cahier des charges).
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// Ticket : projection courante (vue à jour). Titre, description, priorité, tags, état actuel, assigné. L’état réel est aussi reconstituable via TicketEvent (event sourcing).
+model Ticket {
+  id              String    @id @default(uuid())
+  title           String
+  description     String
+  priority        Priority  @default(MEDIUM)
+  tags            String[]
+  workflowId      String
+  workflow        Workflow  @relation(fields: [workflowId], references: [id])
+  currentStateId  String?
+  currentState    State?    @relation(fields: [currentStateId], references: [id], onDelete: SetNull)
+  assigneeId      String?
+  assignee        User?     @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  events          TicketEvent[]
+}
+
+/// Event sourcing : chaque modification sur un ticket est enregistrée ici (création, mise à jour, assignation, changement d’état). Historique immuable ; l’état courant du ticket peut être reconstitué en rejouant ces événements.
+model TicketEvent {
+  id        String   @id @default(uuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  type      String
+  payload   Json
+  userId    String?
+  createdAt DateTime @default(now())
+}

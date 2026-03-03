@@ -29,5 +29,8 @@ npm-debug.log*
 coverage/
 .nyc_output/
 
+# Prisma (chacun initialise sa migration en local)
+prisma/migrations/
+
 # Misc
 *.tsbuildinfo
