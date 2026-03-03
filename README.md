@@ -24,6 +24,9 @@ cp .env.example .env
 # Créer les tables (chaque dev initialise sa migration en local)
 npm run prisma:migrate
 
+# Optionnel : créer un workflow par défaut pour pouvoir créer des tickets
+npm run prisma:seed
+
 # Lancer l’API
 npm run start:dev
 ```
@@ -48,6 +51,7 @@ Ouvre l’interface sur `http://localhost:5555` pour voir et éditer les donnée
 | `npm run prisma:migrate` | Créer / appliquer les migrations |
 | `npm run prisma:studio` | Ouvrir Prisma Studio (tables) |
 | `npm run prisma:generate` | Régénérer le client Prisma |
+| `npm run prisma:seed` | Créer le workflow par défaut (Support + états) |
 
 ---
 
