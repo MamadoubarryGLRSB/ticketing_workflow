@@ -26,6 +26,12 @@ export class AuthService {
       },
       select: { id: true, email: true, name: true, createdAt: true },
     });
+    const roleUser = await this.prisma.role.findUnique({ where: { name: 'USER' } });
+    if (roleUser) {
+      await this.prisma.userRole.create({
+        data: { userId: user.id, roleId: roleUser.id },
+      });
+    }
     const token = this.jwtService.sign({ sub: user.id, email: user.email });
     return { user, access_token: token };
   }
