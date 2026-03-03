@@ -14,12 +14,13 @@ datasource db {
 
 /// Compte utilisateur : login (email/password), profil, et rôles. Peut être assigné à des tickets.
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
+  id        String    @id @default(uuid())
+  email     String    @unique
   password  String
   name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  logoutAt  DateTime? // si défini, tout token émis avant cette date est invalide
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   userRoles UserRole[]
   assignedTickets Ticket[]
 }

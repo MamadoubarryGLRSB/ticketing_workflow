@@ -28,6 +28,8 @@ npm run prisma:migrate
 npm run start:dev
 ```
 
+Documentation et tests API : **Swagger** → `http://localhost:3000/api`
+
 **3. Vérifier les tables (Prisma Studio)**
 
 ```bash
@@ -46,3 +48,13 @@ Ouvre l’interface sur `http://localhost:5555` pour voir et éditer les donnée
 | `npm run prisma:migrate` | Créer / appliquer les migrations |
 | `npm run prisma:studio` | Ouvrir Prisma Studio (tables) |
 | `npm run prisma:generate` | Régénérer le client Prisma |
+
+---
+
+## Auth
+
+- `POST /auth/register` — Inscription (email, password, name optionnel)
+- `POST /auth/login` — Connexion (email, password) → retourne `access_token`
+- `GET /auth/me` — Profil (header `Authorization: Bearer <token>`)
+
+Sur Swagger (`/api`), utiliser **Authorize** avec le token pour tester les routes protégées.
