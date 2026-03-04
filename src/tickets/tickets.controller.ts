@@ -17,14 +17,20 @@ export class TicketsController {
 
   @Post()
   @ApiOperation({ summary: 'Créer un ticket' })
-  create(@Body() dto: CreateTicketDto) {
-    return this.ticketsService.create(dto);
+  create(@Body() dto: CreateTicketDto, @CurrentUser() user: { id: string }) {
+    return this.ticketsService.create(dto, user?.id);
   }
 
   @Get()
   @ApiOperation({ summary: 'Liste des tickets' })
   findAll() {
     return this.ticketsService.findAll();
+  }
+
+  @Get(':id/events')
+  @ApiOperation({ summary: 'Historique des événements du ticket (event sourcing)' })
+  getEvents(@Param('id') id: string) {
+    return this.ticketsService.getEvents(id);
   }
 
   @Get(':id')
@@ -35,8 +41,12 @@ export class TicketsController {
 
   @Patch(':id/assign')
   @ApiOperation({ summary: 'Assigner ou réassigner le ticket (assigneeId null pour désassigner)' })
-  assign(@Param('id') id: string, @Body() dto: AssignTicketDto) {
-    return this.ticketsService.assign(id, dto.assigneeId ?? null);
+  assign(
+    @Param('id') id: string,
+    @Body() dto: AssignTicketDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.ticketsService.assign(id, dto.assigneeId ?? null, user?.id);
   }
 
   @Post(':id/transition')
@@ -46,15 +56,19 @@ export class TicketsController {
   applyTransition(
     @Param('id') id: string,
     @Body() dto: ApplyTransitionDto,
-    @CurrentUser() user: { roles?: string[] },
+    @CurrentUser() user: { id: string; roles?: string[] },
   ) {
-    return this.ticketsService.applyTransition(id, dto.transitionId, user?.roles ?? []);
+    return this.ticketsService.applyTransition(id, dto.transitionId, user?.roles ?? [], user?.id);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Modifier un ticket' })
-  update(@Param('id') id: string, @Body() dto: UpdateTicketDto) {
-    return this.ticketsService.update(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateTicketDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.ticketsService.update(id, dto, user?.id);
   }
 
   @Delete(':id')
