@@ -64,6 +64,14 @@ export class AuthService {
     });
   }
 
+  /** Liste des utilisateurs (id, email, name) pour assignation de tickets, etc. */
+  async findAllUsers() {
+    return this.prisma.user.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, email: true, name: true },
+    });
+  }
+
   async validateUser(payload: { sub: string; email?: string; iat?: number }) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },

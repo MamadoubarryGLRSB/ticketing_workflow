@@ -31,6 +31,14 @@ export class AuthController {
     return user;
   }
 
+  @Get('users')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Liste des utilisateurs (pour assignation de tickets : id, email, nom)' })
+  findAllUsers() {
+    return this.authService.findAllUsers();
+  }
+
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
