@@ -6,6 +6,8 @@ import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { AssignTicketDto } from './dto/assign-ticket.dto';
 import { ApplyTransitionDto } from './dto/apply-transition.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('tickets')
@@ -72,7 +74,9 @@ export class TicketsController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Supprimer un ticket' })
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Supprimer un ticket (réservé ADMIN)' })
   remove(@Param('id') id: string) {
     return this.ticketsService.remove(id);
   }

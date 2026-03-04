@@ -17,6 +17,8 @@ import { UpdateStateDto } from './dto/update-state.dto';
 import { CreateTransitionDto } from './dto/create-transition.dto';
 import { UpdateTransitionDto } from './dto/update-transition.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @ApiTags('workflows')
 @Controller('workflows')
@@ -50,7 +52,9 @@ export class WorkflowsController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Supprimer un workflow' })
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Supprimer un workflow (réservé ADMIN)' })
   removeWorkflow(@Param('id') id: string) {
     return this.workflowsService.removeWorkflow(id);
   }
@@ -75,7 +79,9 @@ export class WorkflowsController {
   }
 
   @Delete(':workflowId/states/:stateId')
-  @ApiOperation({ summary: 'Supprimer un état' })
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Supprimer un état (réservé ADMIN)' })
   removeState(
     @Param('workflowId') workflowId: string,
     @Param('stateId') stateId: string,
@@ -107,7 +113,9 @@ export class WorkflowsController {
   }
 
   @Delete(':workflowId/transitions/:transitionId')
-  @ApiOperation({ summary: 'Supprimer une transition' })
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Supprimer une transition (réservé ADMIN)' })
   removeTransition(
     @Param('workflowId') workflowId: string,
     @Param('transitionId') transitionId: string,
