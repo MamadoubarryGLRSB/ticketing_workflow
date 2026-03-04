@@ -14,15 +14,17 @@ datasource db {
 
 /// Compte utilisateur : login (email/password), profil, et rôles. Peut être assigné à des tickets.
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  password  String
-  name      String?
-  logoutAt  DateTime? // si défini, tout token émis avant cette date est invalide
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  userRoles UserRole[]
-  assignedTickets Ticket[]
+  id                      String    @id @default(uuid())
+  email                   String    @unique
+  password                String
+  name                    String?
+  logoutAt                DateTime? // si défini, tout token émis avant cette date est invalide
+  resetPasswordToken      String?   // token pour réinitialisation mot de passe (mot de passe oublié)
+  resetPasswordExpiresAt  DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  userRoles               UserRole[]
+  assignedTickets         Ticket[]
 }
 
 /// Rôle métier (ex. ADMIN, USER, MANAGER). Utilisé pour l’auth et pour autoriser les transitions de workflow (qui peut passer un ticket d’un état à l’autre).

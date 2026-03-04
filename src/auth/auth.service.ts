@@ -1,9 +1,12 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -70,6 +73,86 @@ export class AuthService {
       orderBy: { name: 'asc' },
       select: { id: true, email: true, name: true },
     });
+  }
+
+  /** Supprimer le compte de l'utilisateur connecté. */
+  async removeMe(userId: string) {
+    await this.prisma.user.delete({ where: { id: userId } });
+    return { message: 'Compte supprimé' };
+  }
+
+  /** Modifier le profil (nom) et/ou le mot de passe. Si newPassword est fourni, currentPassword est requis. */
+  async updateMe(userId: string, dto: UpdateMeDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+    if (dto.newPassword != null && dto.newPassword !== '') {
+      if (!dto.currentPassword) {
+        throw new BadRequestException('Indiquez le mot de passe actuel pour en définir un nouveau.');
+      }
+      if (!(await bcrypt.compare(dto.currentPassword, user.password))) {
+        throw new UnauthorizedException('Mot de passe actuel incorrect.');
+      }
+      const hash = await bcrypt.hash(dto.newPassword, 10);
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          password: hash,
+          logoutAt: new Date(),
+          ...(dto.name !== undefined && { name: dto.name }),
+        },
+      });
+    } else if (dto.name !== undefined) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { name: dto.name },
+      });
+    }
+    const updated = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, createdAt: true },
+    });
+    return {
+      user: updated,
+      message: dto.newPassword ? 'Mot de passe modifié. Reconnectez-vous.' : 'Profil mis à jour.',
+    };
+  }
+
+  /** Mot de passe oublié : génère un token de réinitialisation (en prod : à envoyer par email). */
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return { message: 'Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.' };
+    }
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 h
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { resetPasswordToken: token, resetPasswordExpiresAt: expiresAt },
+    });
+    return {
+      message: 'Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.',
+      resetToken: token,
+    };
+  }
+
+  /** Réinitialiser le mot de passe avec le token reçu (après mot de passe oublié). */
+  async resetPassword(dto: ResetPasswordDto) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: dto.email,
+        resetPasswordToken: dto.token,
+        resetPasswordExpiresAt: { gt: new Date() },
+      },
+    });
+    if (!user) {
+      throw new BadRequestException('Lien invalide ou expiré. Redemandez une réinitialisation.');
+    }
+    const hash = await bcrypt.hash(dto.newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { password: hash, resetPasswordToken: null, resetPasswordExpiresAt: null, logoutAt: new Date() },
+    });
+    return { message: 'Mot de passe réinitialisé. Connectez-vous avec le nouveau mot de passe.' };
   }
 
   async validateUser(payload: { sub: string; email?: string; iat?: number }) {
