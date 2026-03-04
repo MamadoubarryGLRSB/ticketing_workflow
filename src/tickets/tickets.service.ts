@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
@@ -95,5 +95,69 @@ export class TicketsService {
     await this.findOne(id);
     await this.prisma.ticket.delete({ where: { id } });
     return { message: 'Ticket supprimé' };
+  }
+
+  async assign(ticketId: string, assigneeId: string | null) {
+    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) throw new NotFoundException('Ticket introuvable');
+    if (assigneeId !== null && assigneeId !== undefined) {
+      const user = await this.prisma.user.findUnique({ where: { id: assigneeId } });
+      if (!user) throw new NotFoundException('Utilisateur introuvable');
+    }
+    const updated = await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: { assigneeId: assigneeId ?? null },
+      include: {
+        workflow: true,
+        currentState: true,
+        assignee: { select: { id: true, email: true, name: true } },
+      },
+    });
+    return withoutRedundantIds(updated);
+  }
+
+  /**
+   * Applique une transition (ex. Ouvert → En cours). Vérifie que le ticket est bien dans l'état "from"
+   * et que l'utilisateur a un des rôles requis.
+   */
+  async applyTransition(ticketId: string, transitionId: string, userRoles: string[] = []) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      include: { workflow: true, currentState: true },
+    });
+    if (!ticket) throw new NotFoundException('Ticket introuvable');
+
+    const transition = await this.prisma.transition.findFirst({
+      where: { id: transitionId, workflowId: ticket.workflowId },
+      include: { fromState: true, toState: true, requiredRoles: true },
+    });
+    if (!transition) throw new NotFoundException('Transition introuvable ou ne concerne pas ce workflow');
+
+    if (ticket.currentStateId !== transition.fromStateId) {
+      throw new BadRequestException(
+        `Le ticket doit être dans l'état "${transition.fromState.name}" pour cette transition. État actuel : ${ticket.currentState?.name ?? 'aucun'}.`,
+      );
+    }
+
+    const requiredRoleNames = transition.requiredRoles.map((r) => r.name);
+    if (requiredRoleNames.length > 0) {
+      const hasRole = userRoles.some((r) => requiredRoleNames.includes(r));
+      if (!hasRole) {
+        throw new ForbiddenException(
+          `Rôle requis pour cette transition : ${requiredRoleNames.join(' ou ')}.`,
+        );
+      }
+    }
+
+    const updated = await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: { currentStateId: transition.toStateId },
+      include: {
+        workflow: true,
+        currentState: true,
+        assignee: { select: { id: true, email: true, name: true } },
+      },
+    });
+    return withoutRedundantIds(updated);
   }
 }
