@@ -12,7 +12,8 @@ function withoutRedundantIds<
   return rest as Omit<T, 'workflowId' | 'currentStateId' | 'assigneeId'>;
 }
 
-/** Types d’événements pour l’event sourcing (store séparé de la projection Ticket). */
+// Event sourcing : les 4 types d'événements enregistrés à chaque action sur un ticket.
+// La table Ticket = état actuel (projection). La table TicketEvent = historique immuable (qui a fait quoi, quand).
 const EVENT_TYPES = {
   TICKET_CREATED: 'TICKET_CREATED',
   TICKET_UPDATED: 'TICKET_UPDATED',
@@ -34,6 +35,7 @@ export class TicketsService {
     }
     const firstState = workflow.states[0] ?? null;
 
+    // Transaction : création du ticket + écriture de l'événement TICKET_CREATED. Soit les deux passent soit aucune.
     return this.prisma.$transaction(async (tx) => {
       const ticket = await tx.ticket.create({
         data: {
@@ -50,6 +52,7 @@ export class TicketsService {
           assignee: { select: { id: true, email: true, name: true } },
         },
       });
+      // Event sourcing : enregistrer la création (payload = état initial, userId = auteur).
       await tx.ticketEvent.create({
         data: {
           ticketId: ticket.id,
@@ -96,7 +99,7 @@ export class TicketsService {
     return withoutRedundantIds(ticket);
   }
 
-  /** Historique immuable des événements du ticket (event sourcing). */
+  /** Event sourcing : renvoie l'historique des événements du ticket (type, payload, userId, createdAt) pour audit / traçabilité. */
   async getEvents(ticketId: string) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId }, select: { id: true } });
     if (!ticket) throw new NotFoundException('Ticket introuvable');
@@ -109,6 +112,7 @@ export class TicketsService {
 
   async update(id: string, dto: UpdateTicketDto, userId?: string | null) {
     await this.findOne(id);
+    // Transaction : mise à jour du ticket + événement TICKET_UPDATED (payload = changements).
     return this.prisma.$transaction(async (tx) => {
       const ticket = await tx.ticket.update({
         where: { id },
@@ -150,6 +154,7 @@ export class TicketsService {
       const user = await this.prisma.user.findUnique({ where: { id: assigneeId } });
       if (!user) throw new NotFoundException('Utilisateur introuvable');
     }
+    // Transaction : mise à jour assignee + événement TICKET_ASSIGNED.
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.ticket.update({
         where: { id: ticketId },
@@ -210,6 +215,7 @@ export class TicketsService {
       }
     }
 
+    // Transaction : mise à jour de l'état du ticket + événement TRANSITION_APPLIED (from/to/transitionId).
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.ticket.update({
         where: { id: ticketId },
