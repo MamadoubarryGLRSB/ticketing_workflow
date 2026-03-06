@@ -20,6 +20,7 @@ export class AuthService {
     if (existing) {
       throw new ConflictException('Un utilisateur existe déjà avec cet email');
     }
+    // Mot de passe hashé avant stockage (jamais en clair en base).
     const hash = await bcrypt.hash(dto.password, 10);
     const user = await this.prisma.user.create({
       data: {
@@ -29,12 +30,14 @@ export class AuthService {
       },
       select: { id: true, email: true, name: true, createdAt: true },
     });
+    // Attribution du rôle USER par défaut à chaque nouvel inscrit.
     const roleUser = await this.prisma.role.findUnique({ where: { name: 'USER' } });
     if (roleUser) {
       await this.prisma.userRole.create({
         data: { userId: user.id, roleId: roleUser.id },
       });
     }
+    // Token JWT : le front l'envoie dans le header Authorization pour les routes protégées.
     const token = this.jwtService.sign({ sub: user.id, email: user.email });
     return { user, access_token: token };
   }
@@ -47,10 +50,12 @@ export class AuthService {
     if (!user || !(await bcrypt.compare(dto.password, user.password))) {
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
+    // Réinitialiser logoutAt pour que les anciens tokens redeviennent valides (nouvelle session).
     await this.prisma.user.update({
       where: { id: user.id },
       data: { logoutAt: null },
     });
+    // On met les rôles dans le token pour que le RolesGuard puisse vérifier sans refaire un find user.
     const token = this.jwtService.sign({
       sub: user.id,
       email: user.email,
@@ -61,13 +66,14 @@ export class AuthService {
   }
 
   async logout(userId: string) {
+    // Invalider tous les tokens émis avant maintenant : le JWT strategy vérifie iat < logoutAt.
     await this.prisma.user.update({
       where: { id: userId },
       data: { logoutAt: new Date() },
     });
   }
 
-  /** Liste des utilisateurs (id, email, name) pour assignation de tickets, etc. */
+  /** Liste des utilisateurs (id, email, name) pour le sélecteur d'assignation sur les tickets. */
   async findAllUsers() {
     return this.prisma.user.findMany({
       orderBy: { name: 'asc' },
@@ -92,6 +98,7 @@ export class AuthService {
       if (!(await bcrypt.compare(dto.currentPassword, user.password))) {
         throw new UnauthorizedException('Mot de passe actuel incorrect.');
       }
+      // Nouveau hash + logoutAt pour invalider les tokens en cours (reconnexion obligatoire).
       const hash = await bcrypt.hash(dto.newPassword, 10);
       await this.prisma.user.update({
         where: { id: userId },
@@ -123,6 +130,7 @@ export class AuthService {
     if (!user) {
       return { message: 'Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.' };
     }
+    // Token aléatoire + expiration 1 h ; en prod on enverrait le token par email au lieu de le renvoyer dans la réponse.
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 h
     await this.prisma.user.update({
@@ -137,6 +145,7 @@ export class AuthService {
 
   /** Réinitialiser le mot de passe avec le token reçu (après mot de passe oublié). */
   async resetPassword(dto: ResetPasswordDto) {
+    // Utilisateur trouvé seulement si email + token correspondent et que le token n'est pas expiré.
     const user = await this.prisma.user.findFirst({
       where: {
         email: dto.email,
@@ -148,6 +157,7 @@ export class AuthService {
       throw new BadRequestException('Lien invalide ou expiré. Redemandez une réinitialisation.');
     }
     const hash = await bcrypt.hash(dto.newPassword, 10);
+    // Nouveau mot de passe + suppression du token + invalidation des sessions (logoutAt).
     await this.prisma.user.update({
       where: { id: user.id },
       data: { password: hash, resetPasswordToken: null, resetPasswordExpiresAt: null, logoutAt: new Date() },
@@ -155,12 +165,14 @@ export class AuthService {
     return { message: 'Mot de passe réinitialisé. Connectez-vous avec le nouveau mot de passe.' };
   }
 
+  // Appelé par la JWT strategy à chaque requête sur une route protégée : vérifie que l'user existe et que le token n'a pas été révoqué (logout).
   async validateUser(payload: { sub: string; email?: string; iat?: number }) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: { userRoles: { include: { role: true } } },
     });
     if (!user) return null;
+    // Si logoutAt > date d'émission du token (iat), le token est considéré comme révoqué.
     if (user.logoutAt && payload.iat && payload.iat < Math.floor(user.logoutAt.getTime() / 1000)) {
       return null;
     }

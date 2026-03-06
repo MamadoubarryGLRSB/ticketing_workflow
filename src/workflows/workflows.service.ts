@@ -11,8 +11,9 @@ import { UpdateTransitionDto } from './dto/update-transition.dto';
 export class WorkflowsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ---------- Workflows ----------
+  // ---------- Workflows : CRUD sur les workflows (ex. Support, Bug) ----------
   async createWorkflow(dto: CreateWorkflowDto) {
+    // Création du workflow avec nom et description ; states/transitions vides au départ.
     return this.prisma.workflow.create({
       data: { name: dto.name, description: dto.description ?? null },
       include: { states: true, transitions: true },
@@ -20,6 +21,7 @@ export class WorkflowsService {
   }
 
   async findAllWorkflows() {
+    // Liste tous les workflows, états triés par order, transitions avec from/to et rôles requis.
     return this.prisma.workflow.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
@@ -30,6 +32,7 @@ export class WorkflowsService {
   }
 
   async findOneWorkflow(id: string) {
+    // Détail d'un workflow avec ses états et transitions (utilisé pour afficher le kanban et les boutons de transition).
     const workflow = await this.prisma.workflow.findUnique({
       where: { id },
       include: {
@@ -43,6 +46,7 @@ export class WorkflowsService {
 
   async updateWorkflow(id: string, dto: UpdateWorkflowDto) {
     await this.findOneWorkflow(id);
+    // Mise à jour partielle : seuls les champs envoyés (name, description) sont modifiés.
     return this.prisma.workflow.update({
       where: { id },
       data: {
@@ -55,13 +59,15 @@ export class WorkflowsService {
 
   async removeWorkflow(id: string) {
     await this.findOneWorkflow(id);
+    // Suppression en cascade : états et transitions du workflow sont aussi supprimés (schéma Prisma).
     await this.prisma.workflow.delete({ where: { id } });
     return { message: 'Workflow supprimé' };
   }
 
-  // ---------- States ----------
+  // ---------- States : états d'un workflow (ex. Ouvert, En cours, Fermé) ----------
   async createState(workflowId: string, dto: CreateStateDto) {
     await this.findOneWorkflow(workflowId);
+    // Ajout d'un état au workflow ; order sert à l'affichage (kanban, liste).
     return this.prisma.state.create({
       data: {
         workflowId,
@@ -72,6 +78,7 @@ export class WorkflowsService {
   }
 
   async updateState(workflowId: string, stateId: string, dto: UpdateStateDto) {
+    // Vérifier que l'état appartient bien à ce workflow avant de modifier.
     const state = await this.prisma.state.findFirst({
       where: { id: stateId, workflowId },
     });
@@ -94,14 +101,16 @@ export class WorkflowsService {
     return { message: 'État supprimé' };
   }
 
-  // ---------- Transitions ----------
+  // ---------- Transitions : lien entre deux états (ex. Ouvert -> En cours), avec rôles requis optionnels ----------
   async createTransition(workflowId: string, dto: CreateTransitionDto) {
     const workflow = await this.findOneWorkflow(workflowId);
+    // fromState et toState doivent être des états de ce workflow.
     const fromState = workflow.states.find((s) => s.id === dto.fromStateId);
     const toState = workflow.states.find((s) => s.id === dto.toStateId);
     if (!fromState || !toState) {
       throw new NotFoundException('fromStateId et toStateId doivent appartenir à ce workflow');
     }
+    // requiredRoleIds : seuls les utilisateurs avec un de ces rôles pourront appliquer cette transition.
     return this.prisma.transition.create({
       data: {
         workflowId,
@@ -121,6 +130,7 @@ export class WorkflowsService {
     });
     if (!transition) throw new NotFoundException('Transition introuvable');
     const workflow = await this.findOneWorkflow(workflowId);
+    // Construction des données à mettre à jour en vérifiant que from/to appartiennent au workflow.
     const data: { fromStateId?: string; toStateId?: string; requiredRoles?: { set: { id: string }[] } } = {};
     if (dto.fromStateId !== undefined) {
       if (!workflow.states.some((s) => s.id === dto.fromStateId))

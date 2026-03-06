@@ -26,6 +26,7 @@ export class TicketsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateTicketDto, userId?: string | null) {
+    // Récupérer le premier état du workflow pour y placer le ticket à la création.
     const workflow = await this.prisma.workflow.findUnique({
       where: { id: dto.workflowId },
       include: { states: { orderBy: { order: 'asc' }, take: 1 } },
@@ -68,11 +69,13 @@ export class TicketsService {
           userId: userId ?? null,
         },
       });
+      // On retire workflowId/currentStateId/assigneeId des réponses car déjà dans les objets imbriqués.
       return withoutRedundantIds(ticket);
     });
   }
 
   async findAll() {
+    // Liste des tickets avec workflow, état actuel et assigné ; tri par date de mise à jour.
     const tickets = await this.prisma.ticket.findMany({
       orderBy: { updatedAt: 'desc' },
       include: {
@@ -85,6 +88,7 @@ export class TicketsService {
   }
 
   async findOne(id: string) {
+    // Détail d'un ticket avec workflow, currentState et assignee pour l'affichage.
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
       include: {
@@ -103,6 +107,7 @@ export class TicketsService {
   async getEvents(ticketId: string) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId }, select: { id: true } });
     if (!ticket) throw new NotFoundException('Ticket introuvable');
+    // Ordre chronologique pour afficher la timeline.
     return this.prisma.ticketEvent.findMany({
       where: { ticketId },
       orderBy: { createdAt: 'asc' },
@@ -111,6 +116,7 @@ export class TicketsService {
   }
 
   async update(id: string, dto: UpdateTicketDto, userId?: string | null) {
+    // findOne vérifie que le ticket existe avant de modifier.
     await this.findOne(id);
     // Transaction : mise à jour du ticket + événement TICKET_UPDATED (payload = changements).
     return this.prisma.$transaction(async (tx) => {
@@ -143,6 +149,7 @@ export class TicketsService {
 
   async remove(id: string) {
     await this.findOne(id);
+    // Suppression en cascade : les TicketEvent du ticket sont aussi supprimés (schéma Prisma).
     await this.prisma.ticket.delete({ where: { id } });
     return { message: 'Ticket supprimé' };
   }
@@ -150,6 +157,7 @@ export class TicketsService {
   async assign(ticketId: string, assigneeId: string | null, userId?: string | null) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
     if (!ticket) throw new NotFoundException('Ticket introuvable');
+    // Si on assigne quelqu'un, vérifier que l'utilisateur existe. assigneeId null = désassigner.
     if (assigneeId !== null && assigneeId !== undefined) {
       const user = await this.prisma.user.findUnique({ where: { id: assigneeId } });
       if (!user) throw new NotFoundException('Utilisateur introuvable');
@@ -193,18 +201,21 @@ export class TicketsService {
     });
     if (!ticket) throw new NotFoundException('Ticket introuvable');
 
+    // La transition doit appartenir au workflow du ticket.
     const transition = await this.prisma.transition.findFirst({
       where: { id: transitionId, workflowId: ticket.workflowId },
       include: { fromState: true, toState: true, requiredRoles: true },
     });
     if (!transition) throw new NotFoundException('Transition introuvable ou ne concerne pas ce workflow');
 
+    // Le ticket doit être dans l'état "from" pour qu'on puisse appliquer la transition.
     if (ticket.currentStateId !== transition.fromStateId) {
       throw new BadRequestException(
         `Le ticket doit être dans l'état "${transition.fromState.name}" pour cette transition. État actuel : ${ticket.currentState?.name ?? 'aucun'}.`,
       );
     }
 
+    // Si la transition a des rôles requis, l'utilisateur connecté doit en avoir au moins un.
     const requiredRoleNames = transition.requiredRoles.map((r) => r.name);
     if (requiredRoleNames.length > 0) {
       const hasRole = userRoles.some((r) => requiredRoleNames.includes(r));
@@ -263,6 +274,7 @@ export class TicketsService {
     });
     if (events.length === 0) return null;
 
+    // Replay des événements dans l'ordre pour reconstruire l'état (audit / réparation).
     type State = {
       title: string;
       description: string | null;
